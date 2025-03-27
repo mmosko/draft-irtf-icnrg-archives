@@ -1,0 +1,444 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<?xml-model href="rfc7991bis.rnc"?>
+<?xml-stylesheet type='text/xsl' href='rfc2629.xslt' ?>
+
+<!DOCTYPE rfc [
+  <!ENTITY nbsp "&#160;">
+  <!ENTITY zwsp "&#8203;">
+  <!ENTITY nbhy "&#8209;">
+  <!ENTITY wj "&#8288;">
+]>
+
+<rfc 
+  xmlns:xi="http://www.w3.org/2001/XInclude" 
+  submissionType="IRTF" 
+  category="exp" 
+  docName="draft-mosko-icnrg-archives-00" 
+  updates="8569, 8609" 
+  ipr="trust200902">
+
+  <!-- ***** FRONT MATTER ***** -->
+
+  <front>
+    <!-- The abbreviated title is used in the page header - it is only necessary if the
+        full title is longer than 39 characters -->
+
+    <title abbrev="ALEC">Archive-Like Extendable Collections (ALEC)</title>
+
+    <!-- add 'role="editor"' below for the editors if appropriate -->
+
+    <!-- Another author who claims to be an editor -->
+
+    <author fullname="Marc Mosko" initials="M.E." surname="Mosko">
+      <organization></organization>
+      <address>
+       <postal>
+         <street/>
+         <city>Kensington</city>
+         <region>California</region>
+         <code>94707</code>
+         <country>USA</country>
+       </postal>
+       <phone></phone>
+       <email>marc@mosko.org</email>
+     </address>
+    </author>
+
+    <date/>
+
+    <!-- Meta-data Declarations -->
+
+    <workgroup>ICNRG</workgroup>
+
+    <keyword>ICN</keyword>
+    <keyword>Information-centric Networking</keyword>
+    <keyword>CCNx</keyword>
+
+    <!-- Keywords will be incorporated into HTML output
+        files in a meta tag but they have no effect on text or nroff
+        output. If you submit your draft to the RFC Editor, the
+        keywords will be used for the search engine. -->
+
+    <abstract>
+      <t>This document defines a method to represent an archive of objects, somewhat like a tar file.  The
+        ICN Archive-Like Extendable Collection (ALEC) maps a set of POSIX-like paths and/or ICN names to
+        a set of data objects (e.g. files).  ALEC supports versioning with efficient patches.  ALEC patched
+        collections may also have checkpoints, so a consumer without previous versions does not need to reconstruct
+        the collection from the beginning through all patches.  ALEC also defines a standard extensible mechanism to include
+        data compression for content object payloads.
+        This document updates <xref target="RFC8569">RFC8569</xref> and <xref target="RFC8609">RFC8609</xref>.
+      </t>
+
+    </abstract>
+  </front>
+
+  <middle>
+    <section title="Introduction">
+      <t>File-Like Information-centric Collections (FLIC) <xref target="FLIC"/> describes an Information-Centric manifest 
+      format to encode a single object, such as a file.  Archive-Like Extendable Collection (ALEC) describes how
+      to store a set of related objects that supports secure, authenticable collections with efficient versioning
+      and compression.  If FLIC could be thought of like a file inode, then ALEC is like a versioned directory.</t>
+
+      <t>ALEC, like FLIC, may be used with several ICN protocols, such as CCNx <xref target="RFC8569"/> or NDN.  In this
+      document, we shall use CCNx terminology.</t>
+
+      <t>An ALEC structure is one or more Content Objects with a PayloadType of T_PAYLOADTYPE_ALEC.  The payload of an ALEC
+        object, like FLIC, is a TLV encoded manifest.  We borrow much of the FLIC structure down to the Node level.
+        A FLIC Node may only contain a FLIC HashGroup.  An ALEC Node may contain any sequence of a DirectoryGroup
+        or a PatchGroup.</t>
+
+      <t>A DirectoryGroup is an ALEC structure similar to a FLIC HashGroup.  A DirectoryGroup (DG) relates a POSIX-like path
+        (i.e. a relative filename) to a ContentObject Hash.  A DG, like a FLIC hash group, has a Name Constructor that
+        directs a consumer how to create an Interest for the ContentObject Hash.  A DG may point to one or more other ALEC
+        objects if the catalog needs to enumerate more files than could fit in a single object.</t>
+
+      <t>A Patch Group (PG) is an ALEC structure that applies a patch to all Manifest elements to the logical "left"
+        in the ALEC Node.  A Patch is a sequence of Delete (DEL) or Insert (INS) operations to a FLIC or ALEC Document
+        Object Model (DOM).  This allows editing the prior manifests based on updates.</t>
+
+
+      <t>This draft introduces a payload compression mechanism that is general to the Payload field of any object.
+        The design goal is to enable data deduplication and single object decompression.  We focus on dictionary-based
+        LZ78-like compression with internal or external dictionaries, though window-based algorithms may also be used.
+        We define three mechanisms here: LZ78-based internal dictionary, LZ78-based external dictionary, and an LZ77-based
+        windowed.  The LZ78 mechanisms enable data deduplication and single-object decompression.  The LZ77 mechanism
+        requires decompression begin at the first object and proceeed in order.</t>
+    </section>
+
+    <section>
+      <name>Requirements Language</name>
+      <t>The key words "MUST", "MUST NOT", "REQUIRED", "SHALL",
+        "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT
+        RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be
+        interpreted as described in BCP 14 <xref target="RFC2119"/>
+        <xref target="RFC8174"/> when, and only when, they appear in
+        all capitals, as shown here.</t>
+    </section>
+
+    <section anchor="terminology"><name>Terminology</name>
+
+      <section anchor="definitions"><name>Definitions</name>
+        <t>This document follows the definitions provided in <xref target="RFC8793"/> for general ICN-related terms and in <xref target="RFC8569"/> and <xref target="RFC8609"/> for CCNx-specific terms.</t>
+
+  	  </section>
+    </section>
+
+
+    <section anchor="design" title="Design Overview">
+
+    </section>
+
+
+    <section anchor="ALEC" title="ALEC Structure">
+      <section anchor="borrowed" title="Elements from FLIC">
+        <t>ALEC uses a similar manifest wrapper as FLIC: <tt>Manifest = T_ALEC_MANIFEST LENGTH [SecurityCtx] (EncryptedNode / Node) [AuthTag]</tt>.  This is identical, except the wrapper type is now <tt>T_ALEC_MANIFEST</tt>.  The ALEC <tt>Node</tt> is also identical to FLIC.</t>
+
+        <t>The difference is ALEC defines <tt>HashGroup = T_HASH_GROUP LENGTH [GroupData] (DirectoryGroup / PatchGroup)</tt>.  FLIC uses Ptrs or AnnotatedPtrs in a HashGroup.</t>
+
+        <t>All FLIC concepts around encryption and name constructors is the same.</t>
+
+        <t>ALEC does not require a specific traversal order of DirectoryGroup entries or nested
+          DirectoryGroups.  Each DirEntry SHOULD be a unique relative path, so it does not matter
+          in which order a consumer fetches the files or nested ALEC nodes.</t>
+      </section>
+
+
+      <section anchor="grammar">
+        <name>Manifest Grammar (ABNF)</name>
+        <t>The ALEC ABNF grammar is below.  We only show new or updated definitions from the FLIC ABNF.</t>
+
+        <t>A <tt>DirectoryGroup</tt> is a list of <tt>DirEntry</tt>.  Each <tt>DirEntry</tt> for an object (file)
+        has a relative POSIX path plus a FLIC <tt>Ptr</tt> to the object's root FLIC manifest.  The path
+        MUST be relative.  Subdirectories are not specifically enumerated apart from being listed in
+        the paths.</t>
+
+        <t>[HOW TO HANDLE EMPTY DIRECTORIES]</t>
+
+        <t>A DirectoryGroup may include nested DirectoryGroups by using a <tt>DirEntry</tt> without a <tt>Path</tt>
+        element.  The <tt>Ptr</tt> MUST point to another ALEC manifest that will continue the collection.</t>
+
+        <t>A PatchGroup is a list of Patches, where each Patch is applied to a Target.  A Target identifies
+          a particular Content Object via a CCNx Link with a Content Object Hash restriction.  It then lists
+          a set of <tt>Edit<tt>s.</t>
+
+        <t>An Edit modifies a particular TLV inside the target manifest.  We treat the nested TLV structure
+          of a FLIC or ALEC Payload as a Document Object Model (DOM) and use an XPath-like element called
+          a <tt>TlvPath</tt>. The Edit then applies a set of sequential operations to that <tt>TlvPath</tt>.</t>
+
+        <t>The <tt>TlvPath</tt> is encoded as an ordered list of <tt>PathElement</tt>s.  A <tt>PathElement</tt>
+        maybe a single TlvType or an indexed TlvType.  A single TlvType matches the first (and only the first)
+        Tlv of the given type at that level of the TlvPath.  An Indexed TlvType specifies the offset of a repeated
+        TlvType.  For efficiency reasons, we allow either a 1-byte or 2-byte index offset.</t>
+
+        <figure anchor="flicgrammar">
+          <name>FLIC Grammar</name>
+          <sourcecode type="abnf"><![CDATA[
+Manifest = T_ALEC_MANIFEST LENGTH
+              [SecurityCtx] (EncryptedNode / Node) [AuthTag]
+
+
+Node = T_NODE LENGTH [NodeData] 1*GROUP [Pad]
+GROUP = DirectoryGroup / PatchGroup
+
+DirectoryGroup = T_DIR_GROUP LENGTH [GroupData] 1*DirEntry
+DirEntry = T_DIR_ENTRY LENGTH [Path] Ptr
+Path = T_PATH LENGTH PosixPath
+PosixPath = ; relative posix delimited path string
+
+PatchGroup = T_PATCH_GROUP LENGTH 1*Patch
+Patch = T_PATCH LENGTH Target 1*Edit
+Target = T_TARGET LENGTH LINK
+LINK = ; as per RFC8609
+TlvPath = 1*PathElement
+PathElement = TlvElement / IndexedTlvElement
+TlvElement = %x00 TlvType
+IndexedTlvElement = (%0x01 TlvType OCTET) / (%x02 TlvType 2OCTET)
+Edit = T_EDIT LENGTH TlvPath 1*EditOp
+EditOp = Delete / Insert / Replace  
+Delete = T_DEL LENGTH START [STOP]
+Insert = T_INS LENGTH START Value
+Replace = T_REP LENGTH START [STOP] Value
+
+START = T_START LENGTH Integer
+STOP = T_STOP LENGTH Integer
+]]>
+      </sourcecode>
+        </figure>
+      </section>
+
+      <section anchor="graphs">
+        <name>ALEC Graphs</name>
+        <t>ALEC DirectoryGroups may form a tree within a single ALEC structure.  It cannot be
+          more general than a tree, as it does not make sense to repeat DirectoryGroups.  Each
+          <tt>DirEntry</tt> has a full relative path, so repeating a DirectoryGroup would simply
+          overwrite a file with itself.</t>
+
+          <t>Two different ALEC structures could point to the same sub-ALEC nodes.  In this case,
+            the two archives contain, for example, the same subdirectory of files.</t>
+    </section>
+
+    <section anchor="patches">
+      <name>Patch Groups</name>
+      <t>Each <tt>PatchGroup</tt> applies a list of Patchs.  Each Patch applies to a specific
+      Content Object based on the <tt>Target</tt>.  An <tt>Edit</tt> applies a set of edit
+      operations to a <tt>TlvPath</tt>.</t>
+
+      <t>We consider the TLV structure of a FLIC or ALEC manifest in the payload of a Content Object
+        to be a Document Object Model (DOM), expressed in nested TLVs.  A TlvPath is an ordered list
+        of path elements, either a single unique TlvElment (0x00) or an IndexedTlvElement with either
+        a 1-byte (0x01) or 2-byte (0x02) offset.</t>
+
+          <figure anchor="patch1">
+            <name>FLIC DOM Example</name>
+            <sourcecode type="text"><![CDATA[
+T_FLIC_MANIFEST
+   T_SECURITY_CONTEXT
+      T_AEAD_CTX
+         T_KEYNUM 0x547780
+         T_NONCE 0x48383838...
+         T_AEADMode AEAD_AES_256_GCM
+   T_NODE
+      T_NODE_DATA
+         T_SUBTREE_DIGEST 0xabde1244...
+      T_HASH_GROUP
+         T_PTRS
+            0x010101...
+            0x020202...
+            0x030303...
+            0x040404...
+      T_HASH_GROUP
+        T_GROUP_DATA
+          T_NCID 2
+        T_PTRS
+           0x050505...
+           0x060606...
+  T_AUTHTAG 0xaabbcc...]]>
+            </sourcecode>
+          </figure>
+
+          <t>Consider the FLIC manifest in <xref target="patch1"/>.  Each of the
+          <tt>T_foo</tt> symbols is a defined TLV type.  In CCNx, they are all 2 bytes.
+          In NDN, they are variable size, but one can determine the length based on the
+          type encoding rules.  To replace the 0x020202... pointer in the first
+          hasgroup, we would use the TlvPath shown in <xref target="tlvpath1"/>, which
+          is encoded in 10 bytes.  The edit operations would then be "REP(1, 0xc0c0...)"
+          to replace the hash value at index 1 with the new hash value of 0xc0c0....
+        </t>
+
+          <figure anchor="tlvpath1">
+            <name>Example TlvPath</name>
+            <sourcecode type='pseudocode'><![CDATA[
+0x00 T_FLIC_MANIFEST
+0x00 T_NODE
+0x01 T_HASHGROUP 0x01 ; index to first hash group
+]]>
+            </sourcecode>
+          </figure>          
+
+    </section>
+
+    <section anchor="types" title="TLV Types">
+      <t>This section specifies the TLV types used inside ALEC.  This section will
+        be expanded into an IANA considerations that specifies the ALEC registries.</t>
+
+        <t>An ALEC manifest will have a PayloadType of T_PAYLOADTYPE_MANIFEST.  It is
+          distinguished as an ALEC manifest by the opening TLV in the Payload
+          being T_ALEC_MANIFEST.</t>
+
+      <t><em>[We need to define the types for compression].</em></t>
+
+      <table align="left">
+        <name>ALEC TLV Types</name>
+        <thead>
+          <tr>
+            <th align="center">Name</th>
+            <th align="center">Symbol</th>
+            <th align="center">Type</th>
+            <th align="center">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th align="center">Manifest Type</th>
+            <th align="center">T_ALEC_MANIFEST</th>
+            <th align="center">0x0001</th>
+            <th align="center">First TLV element</th>
+          </tr> 
+
+          <tr>
+           <th align="center">DirectoryGroup</th>
+            <th align="center">T_DIR_GROUP</th>
+            <th align="center">0x0030</th>
+            <th align="center">A FLIC Manifest Node element</th>
+          </tr>            
+          <tr>
+           <th align="center">PatchGroup</th>
+            <th align="center">T_PATCH_GROUP</th>
+            <th align="center">0x0031</th>
+            <th align="center">A FLIC Manifest Node element</th>
+          </tr>
+
+          <tr>
+           <th align="center">Path</th>
+            <th align="center">T_PATH</th>
+            <th align="center">0x0032</th>
+            <th align="center">A DirectoryGroup element</th>
+          </tr>  
+
+          <tr>
+           <th align="center">Patch</th>
+            <th align="center">T_PATCH</th>
+            <th align="center">0x0033</th>
+            <th align="center">A PatchGroup element</th>
+          </tr>
+
+          <tr>
+           <th align="center">DELETE</th>
+            <th align="center">T_DEL</th>
+            <th align="center">0x0034</th>
+            <th align="center">A Delete operation</th>
+          </tr>   
+
+          <tr>
+           <th align="center">INSERT</th>
+            <th align="center">T_INS</th>
+            <th align="center">0x0035</th>
+            <th align="center">An Insert operation</th>
+          </tr>
+
+          <tr>
+           <th align="center">REPLACE</th>
+            <th align="center">T_REP</th>
+            <th align="center">0x0036</th>
+            <th align="center">A Replace operation (a delete and insert)</th>
+          </tr>
+
+          <tr>
+           <th align="center">START</th>
+            <th align="center">T_START</th>
+            <th align="center">0x0037</th>
+            <th align="center">The Start index of an operation</th>
+          </tr>
+
+          <tr>
+           <th align="center">STOP</th>
+            <th align="center">T_STOP</th>
+            <th align="center">0x0038</th>
+            <th align="center">The Stop index of an operation</th>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+      <section anchor="examples" title="Examples">
+        <t></t>
+    </section>
+
+    <section anchor="Acknowledgements" title="Acknowledgements">
+      <t></t>
+    </section>
+
+  </middle>
+
+  <!--  *****BACK MATTER ***** -->
+
+  <back>
+    <!-- References split into informative and normative -->
+
+    <references title="Normative References">
+      <xi:include href="https://xml2rfc.ietf.org/public/rfc/bibxml/reference.RFC.2119.xml"/>
+      <xi:include href="https://xml2rfc.ietf.org/public/rfc/bibxml/reference.RFC.8174.xml"/>
+      <xi:include href="https://xml2rfc.ietf.org/public/rfc/bibxml/reference.RFC.8569.xml"/>
+      <xi:include href="https://xml2rfc.ietf.org/public/rfc/bibxml/reference.RFC.8126.xml"/>
+      <xi:include href="https://xml2rfc.ietf.org/public/rfc/bibxml/reference.RFC.8609.xml"/>
+    </references>
+
+    <references title="Informative References">
+      <xi:include href="https://xml2rfc.ietf.org/public/rfc/bibxml/reference.RFC.8793.xml"/>
+      <xi:include href="https://xml2rfc.ietf.org/public/rfc/bibxml3/reference.I-D.irtf-icnrg-reflexive-forwarding.xml"/>
+      <xi:include href="https://xml2rfc.ietf.org/public/rfc/bibxml3/reference.I-D.mosko-icnrg-ccnxchunking.xml"/>
+
+     	<reference anchor="Asaeda2019" target="https://search.ieice.org/bin/summary.php?id=e102-b_9_1792">
+     	  <front>
+       		<title>Cefore: Software Platform Enabling Content-Centric Networking and Beyond</title>
+       		<author surname="Asaeda" initials="H."/>
+       		<author surname="Ooka" initials="A."/>
+       		<author surname="Matsuzono" initials="K."/>
+       		<author surname="Li" initials="R."/>
+       		<date month="September" year="2019"/>
+      	  </front>
+     	  <seriesInfo name="IEICE Transactions on Communications," value="Vol.E102-B, No.9"/>
+     	  <seriesInfo name="DOI" value="10.1587/transcom.2018EII0001"/>
+     	</reference>
+
+      <reference anchor="FLIC" target="https://datatracker.ietf.org/doc/html/draft-irtf-icnrg-flic-07">
+        <front>
+        <title>File-Like ICN Collections (FLIC)</title>
+        <author initials="C." surname="Tschudin" fullname="Christian Tschudin">
+        <organization>University of Basel</organization>
+        </author>
+        <author initials="C. A." surname="Wood" fullname="Christopher A. Wood">
+        <organization>Cloudflare</organization>
+        </author>
+        <author initials="M." surname="Mosko" fullname="Marc Mosko">
+        <organization></organization>
+        </author>
+        <author initials="D. R." surname="Oran" fullname="David R. Oran">
+        <organization>Network Systems Research &amp; Design</organization>
+        </author>
+        <date month="October" day="22" year="2023"/>
+        </front>
+        <seriesInfo name="Internet-Draft" value="draft-irtf-icnrg-flic-07"/>
+      </reference>
+
+     	<reference anchor="Cefore" target="https://github.com/cefore/">
+     	  <front>
+     	    <title>Cefore</title>
+     	    <author surname="Cefore development team"/>
+     	  </front>
+     	</reference>
+    </references>
+
+  </back>
+</rfc>
